@@ -90,12 +90,21 @@ A comprehensive drug effects tracking application that helps doctors and patient
    ```
 
 4. **Database Setup**
+   
+   **Option A: Local MySQL**
    ```bash
-   # Create MySQL database
+   # Create local MySQL database
    node setup-mysql.js
+   ```
+   
+   **Option B: AWS RDS MySQL**
+   ```bash
+   # Follow AWS-RDS-SETUP.md guide first
+   # Then test AWS RDS connection
+   node setup-aws-rds.js
+   ```
    
    # The application will automatically create tables on first run
-   ```
 
 5. **Start the application**
    ```bash

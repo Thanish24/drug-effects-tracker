@@ -20,6 +20,12 @@ const sequelize = new Sequelize(
       charset: 'utf8mb4',
       collate: 'utf8mb4_unicode_ci',
       timestamps: true
+    },
+    dialectOptions: {
+      ssl: {
+        require: true,
+        rejectUnauthorized: false
+      }
     }
   }
 );
