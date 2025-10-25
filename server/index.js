@@ -6,7 +6,7 @@ const { createServer } = require('http');
 const { Server } = require('socket.io');
 require('dotenv').config();
 
-const { sequelize } = require('./models');
+const { db } = require('./config/firebase');
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
 const drugRoutes = require('./routes/drugs');
@@ -112,21 +112,17 @@ app.set('io', io);
 
 const PORT = process.env.PORT || 5000;
 
-// Database connection and server startup
+// Firebase connection and server startup
 const startServer = async () => {
   try {
-    await sequelize.authenticate();
-    console.log('Database connection established successfully.');
-    
-    // Sync database (use with caution in production)
-    if (process.env.NODE_ENV === 'development') {
-      await sequelize.sync({ alter: true });
-      console.log('Database synchronized.');
-    }
+    // Test Firebase connection
+    await db.collection('test').doc('connection').set({ test: true });
+    console.log('Firebase connection established successfully.');
     
     server.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);
       console.log(`Environment: ${process.env.NODE_ENV}`);
+      console.log('Firebase Firestore database ready!');
     });
   } catch (error) {
     console.error('Unable to start server:', error);

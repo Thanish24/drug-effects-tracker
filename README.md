@@ -47,7 +47,7 @@ A comprehensive drug effects tracking application that helps doctors and patient
 
 ### Prerequisites
 - Node.js (v16 or higher)
-- MySQL (v8.0 or higher)
+- Firebase project (free)
 - npm or yarn
 
 ### Setup Instructions
@@ -68,14 +68,13 @@ A comprehensive drug effects tracking application that helps doctors and patient
    cp env.example .env
    ```
    
-   Update the `.env` file with your MySQL configuration:
+   Update the `.env` file with your Firebase configuration:
    ```env
-   # Database Configuration
-   DB_HOST=localhost
-   DB_PORT=3306
-   DB_NAME=drug_effects_tracker
-   DB_USER=your_mysql_user
-   DB_PASSWORD=your_mysql_password
+   # Firebase Configuration
+   FIREBASE_PROJECT_ID=your-firebase-project-id
+   FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nyour-private-key-here\n-----END PRIVATE KEY-----\n"
+   FIREBASE_CLIENT_EMAIL=firebase-adminsdk-xxxxx@your-project.iam.gserviceaccount.com
+   FIREBASE_DATABASE_URL=https://your-project-id-default-rtdb.firebaseio.com
 
    # JWT Configuration
    JWT_SECRET=your_super_secret_jwt_key_here
@@ -89,22 +88,21 @@ A comprehensive drug effects tracking application that helps doctors and patient
    NODE_ENV=development
    ```
 
-4. **Database Setup**
+4. **Firebase Setup**
    
-   **Option A: Local MySQL**
+   **Follow the Firebase Setup Guide:**
    ```bash
-   # Create local MySQL database
-   node setup-mysql.js
+   # Read the comprehensive setup guide
+   cat FIREBASE-SETUP.md
    ```
    
-   **Option B: AWS RDS MySQL**
-   ```bash
-   # Follow AWS-RDS-SETUP.md guide first
-   # Then test AWS RDS connection
-   node setup-aws-rds.js
-   ```
-   
-   # The application will automatically create tables on first run
+   **Quick Setup:**
+   1. Create Firebase project at [console.firebase.google.com](https://console.firebase.google.com)
+   2. Enable Firestore Database
+   3. Generate service account key
+   4. Update `.env` file with Firebase credentials
+   5. Test connection: `node test-firebase-connection.js`
+   6. Seed example drugs: `node seed-drugs-firebase.js`
 
 5. **Start the application**
    ```bash

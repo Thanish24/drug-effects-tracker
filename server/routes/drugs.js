@@ -1,5 +1,5 @@
 const express = require('express');
-const { Drug } = require('../models');
+const { Drug } = require('../models/firebaseModels');
 const { requireDoctor } = require('../middleware/auth');
 
 const router = express.Router();
@@ -9,30 +9,32 @@ router.get('/', async (req, res) => {
   try {
     const { search, drugClass, page = 1, limit = 20 } = req.query;
     
-    const whereClause = { isActive: true };
+    const drugModel = new Drug();
+    let drugs = await drugModel.findAll({ isActive: true });
     
+    // Apply search filter
     if (search) {
-      whereClause[require('sequelize').Op.or] = [
-        { name: { [require('sequelize').Op.iLike]: `%${search}%` } },
-        { genericName: { [require('sequelize').Op.iLike]: `%${search}%` } }
-      ];
+      drugs = drugs.filter(drug => 
+        drug.name.toLowerCase().includes(search.toLowerCase()) ||
+        drug.genericName?.toLowerCase().includes(search.toLowerCase())
+      );
     }
     
+    // Apply drug class filter
     if (drugClass) {
-      whereClause.drugClass = drugClass;
+      drugs = drugs.filter(drug => drug.drugClass === drugClass);
     }
-
-    const offset = (page - 1) * limit;
     
-    const { count, rows: drugs } = await Drug.findAndCountAll({
-      where: whereClause,
-      limit: parseInt(limit),
-      offset: parseInt(offset),
-      order: [['name', 'ASC']]
-    });
+    // Sort by name
+    drugs.sort((a, b) => a.name.localeCompare(b.name));
+    
+    // Apply pagination
+    const offset = (page - 1) * limit;
+    const paginatedDrugs = drugs.slice(offset, offset + parseInt(limit));
+    const count = drugs.length;
 
     res.json({
-      drugs,
+      drugs: paginatedDrugs,
       pagination: {
         total: count,
         page: parseInt(page),
@@ -51,7 +53,8 @@ router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
     
-    const drug = await Drug.findByPk(id);
+    const drugModel = new Drug();
+    const drug = await drugModel.findById(id);
     if (!drug) {
       return res.status(404).json({ error: 'Drug not found' });
     }
@@ -84,12 +87,13 @@ router.post('/', requireDoctor, async (req, res) => {
     }
 
     // Check if drug already exists
-    const existingDrug = await Drug.findOne({ where: { name } });
+    const drugModel = new Drug();
+    const existingDrug = await drugModel.findByName(name);
     if (existingDrug) {
       return res.status(409).json({ error: 'Drug already exists' });
     }
 
-    const drug = await Drug.create({
+    const drug = await drugModel.create({
       name,
       genericName,
       manufacturer,

@@ -1,6 +1,6 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
-const { User } = require('../models');
+const { User } = require('../models/firebaseModels');
 const { authenticateToken } = require('../middleware/auth');
 
 const router = express.Router();
@@ -87,8 +87,8 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'Email and password required' });
     }
 
-    // Find user with password included
-    const user = await User.scope('withPassword').findOne({ where: { email } });
+    // Find user by email
+    const user = await new User().findByEmail(email);
     if (!user) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
@@ -99,13 +99,15 @@ router.post('/login', async (req, res) => {
     }
 
     // Validate password
-    const isValidPassword = await user.validatePassword(password);
+    const userModel = new User();
+    const isValidPassword = await userModel.validatePassword(user, password);
     if (!isValidPassword) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
     // Update last login
-    await user.update({ lastLogin: new Date() });
+    const userModel = new User();
+    await userModel.update(user.id, { lastLogin: new Date() });
 
     // Generate JWT token
     const token = jwt.sign(

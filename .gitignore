@@ -122,6 +122,10 @@ build/
 *.sqlite
 *.sqlite3
 
+# Firebase service account key
+serviceAccountKey.json
+firebase-adminsdk-*.json
+
 # Seed files (keep the script but not the data)
 # Uncomment if you don't want to track seed scripts
 # seed-drugs.js

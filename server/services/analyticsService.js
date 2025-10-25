@@ -1,4 +1,4 @@
-const { SideEffect, Drug, Prescription, DrugInteraction, AnalyticsAlert } = require('../models');
+const { SideEffect, Drug, Prescription, DrugInteraction, AnalyticsAlert } = require('../models/firebaseModels');
 const LLMService = require('./llmService');
 
 class AnalyticsService {

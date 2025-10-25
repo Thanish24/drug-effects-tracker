@@ -1,5 +1,5 @@
 const express = require('express');
-const { AnalyticsAlert, SideEffect, Drug, DrugInteraction } = require('../models');
+const { AnalyticsAlert, SideEffect, Drug, DrugInteraction } = require('../models/firebaseModels');
 const AnalyticsService = require('../services/analyticsService');
 const { requireDoctor } = require('../middleware/auth');
 

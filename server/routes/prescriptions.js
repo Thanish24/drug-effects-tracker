@@ -1,5 +1,5 @@
 const express = require('express');
-const { Prescription, User, Drug } = require('../models');
+const { Prescription, User, Drug } = require('../models/firebaseModels');
 const { requireDoctor, requirePatient } = require('../middleware/auth');
 
 const router = express.Router();
