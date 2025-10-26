@@ -29,7 +29,7 @@ A comprehensive drug effects tracking application that helps doctors and patient
 
 ### Backend
 - **Node.js** with Express.js
-- **MySQL** database with Sequelize ORM
+- **PostgreSQL** database with Sequelize ORM
 - **JWT** authentication
 - **OpenAI GPT-4** for LLM analysis
 - **Socket.io** for real-time notifications
@@ -47,7 +47,7 @@ A comprehensive drug effects tracking application that helps doctors and patient
 
 ### Prerequisites
 - Node.js (v16 or higher)
-- Firebase project (free)
+- PostgreSQL (v12 or higher)
 - npm or yarn
 
 ### Setup Instructions
@@ -63,18 +63,24 @@ A comprehensive drug effects tracking application that helps doctors and patient
    npm run install-all
    ```
 
-3. **Environment Configuration**
+3. **Quick Setup (Recommended)**
+   ```bash
+   node setup-postgresql.js
+   ```
+   
+   Or manually configure:
    ```bash
    cp env.example .env
    ```
    
-   Update the `.env` file with your Firebase configuration:
+   Update the `.env` file with your database configuration:
    ```env
-   # Firebase Configuration
-   FIREBASE_PROJECT_ID=your-firebase-project-id
-   FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nyour-private-key-here\n-----END PRIVATE KEY-----\n"
-   FIREBASE_CLIENT_EMAIL=firebase-adminsdk-xxxxx@your-project.iam.gserviceaccount.com
-   FIREBASE_DATABASE_URL=https://your-project-id-default-rtdb.firebaseio.com
+   # Database Configuration
+   DB_NAME=medalert_pro
+   DB_USER=postgres
+   DB_PASSWORD=your_password
+   DB_HOST=localhost
+   DB_PORT=5432
 
    # JWT Configuration
    JWT_SECRET=your_super_secret_jwt_key_here
@@ -88,23 +94,19 @@ A comprehensive drug effects tracking application that helps doctors and patient
    NODE_ENV=development
    ```
 
-4. **Firebase Setup**
-   
-   **Follow the Firebase Setup Guide:**
+4. **Create Database**
    ```bash
-   # Read the comprehensive setup guide
-   cat FIREBASE-SETUP.md
+   # Create PostgreSQL database
+   createdb medalert_pro
    ```
-   
-   **Quick Setup:**
-   1. Create Firebase project at [console.firebase.google.com](https://console.firebase.google.com)
-   2. Enable Firestore Database
-   3. Generate service account key
-   4. Update `.env` file with Firebase credentials
-   5. Test connection: `node test-firebase-connection.js`
-   6. Seed example drugs: `node seed-drugs-firebase.js`
 
-5. **Start the application**
+5. **Populate Test Data (Optional)**
+   ```bash
+   # Populate database with test data for analytics
+   node populate-all-alert-data.js
+   ```
+
+6. **Start the application**
    ```bash
    npm run dev
    ```

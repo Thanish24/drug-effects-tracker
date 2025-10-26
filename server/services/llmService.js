@@ -301,6 +301,96 @@ Respond with this exact JSON format:
       };
     }
   }
+
+  static async analyzeDrugInteraction(drug1Name, drug2Name, drug1Description = '', drug2Description = '') {
+    try {
+      // Skip LLM analysis if Groq is not configured
+      if (!groq) {
+        return {
+          hasInteraction: false,
+          severity: 'minor',
+          description: 'Basic analysis: No LLM available for interaction detection',
+          clinicalEffect: 'Unknown',
+          management: 'Consult healthcare provider for drug interaction assessment',
+          confidence: 0.0
+        };
+      }
+      
+      const prompt = `Analyze potential drug interaction and respond with ONLY valid JSON:
+
+Drug 1: ${drug1Name}
+Drug 1 Description: ${drug1Description}
+
+Drug 2: ${drug2Name}
+Drug 2 Description: ${drug2Description}
+
+Respond with this exact JSON format:
+{
+  "hasInteraction": false,
+  "severity": "minor",
+  "description": "no significant interaction detected",
+  "clinicalEffect": "minimal clinical significance",
+  "management": "monitor patient",
+  "confidence": 0.5
+}`;
+
+      const response = await groq.chat.completions.create({
+        model: "llama-3.1-8b-instant",
+        messages: [
+          {
+            role: "system",
+            content: "You are a clinical pharmacist AI assistant specializing in drug interaction analysis. Provide accurate assessments of potential drug interactions based on pharmacological principles. Be conservative in your assessments and always recommend consulting healthcare providers for serious concerns."
+          },
+          {
+            role: "user",
+            content: prompt
+          }
+        ],
+        temperature: 0.2,
+        max_tokens: 800
+      });
+
+      let analysis;
+      try {
+        // Clean the response to extract JSON
+        let content = response.choices[0].message.content.trim();
+        
+        // Remove markdown code blocks if present
+        if (content.includes('```json')) {
+          content = content.split('```json')[1].split('```')[0];
+        } else if (content.includes('```')) {
+          content = content.split('```')[1].split('```')[0];
+        }
+        
+        // Remove any markdown formatting
+        content = content.replace(/\*\*/g, '').replace(/\*/g, '');
+        
+        analysis = JSON.parse(content);
+      } catch (parseError) {
+        console.log('Drug interaction JSON parse error, using fallback');
+        analysis = {
+          hasInteraction: false,
+          severity: "minor",
+          description: "Unable to parse AI response",
+          clinicalEffect: "Unknown",
+          management: "Consult healthcare provider",
+          confidence: 0.0
+        };
+      }
+      
+      return analysis;
+    } catch (error) {
+      console.error('Drug interaction analysis error:', error);
+      return {
+        hasInteraction: false,
+        severity: "minor",
+        description: "Unable to analyze interaction due to service error",
+        clinicalEffect: "Unknown",
+        management: "Consult healthcare provider",
+        confidence: 0.0
+      };
+    }
+  }
 }
 
 module.exports = LLMService;

@@ -1,343 +1,285 @@
-const { db } = require('./server/config/firebase');
-const { Drug, SideEffect, Prescription, User, AnalyticsAlert } = require('./server/models/firebaseModels');
+const { sequelize, AnalyticsAlert, Drug, SideEffect, DrugInteraction } = require('./server/models');
+const { Op } = require('sequelize');
 
 async function populateAnalyticsReportData() {
-  console.log('📊 Populating Firestore with Analytics Report Data...\n');
+  console.log('📊 Populating PostgreSQL with Analytics Report Data...\n');
 
   try {
-    // Test connection
-    console.log('1️⃣ Testing Firebase connection...');
-    await db.collection('test').doc('analytics-setup').set({ test: true });
-    console.log('✅ Firebase connection successful\n');
+    // Connect to database
+    await sequelize.authenticate();
+    console.log('✅ Database connection established.');
 
-    // Create test users (patients and doctors)
-    console.log('2️⃣ Creating test users...');
-    const userModel = new User();
-    
-    const testUsers = [
-      {
-        email: 'doctor3@test.com',
-        password: 'password123',
-        firstName: 'Dr. Emily',
-        lastName: 'Chen',
-        role: 'doctor',
-        licenseNumber: 'MD345678',
-        specialization: 'Endocrinology'
-      },
-      {
-        email: 'patient6@test.com',
-        password: 'password123',
-        firstName: 'David',
-        lastName: 'Miller',
-        role: 'patient',
-        dateOfBirth: '1988-12-03',
-        phoneNumber: '+1234567895'
-      },
-      {
-        email: 'patient7@test.com',
-        password: 'password123',
-        firstName: 'Lisa',
-        lastName: 'Garcia',
-        role: 'patient',
-        dateOfBirth: '1992-04-25',
-        phoneNumber: '+1234567896'
-      },
-      {
-        email: 'patient8@test.com',
-        password: 'password123',
-        firstName: 'Tom',
-        lastName: 'Anderson',
-        role: 'patient',
-        dateOfBirth: '1975-08-14',
-        phoneNumber: '+1234567897'
-      },
-      {
-        email: 'patient9@test.com',
-        password: 'password123',
-        firstName: 'Sarah',
-        lastName: 'Taylor',
-        role: 'patient',
-        dateOfBirth: '1985-11-30',
-        phoneNumber: '+1234567898'
-      }
-    ];
-
-    const createdUsers = [];
-    for (const userData of testUsers) {
-      const user = await userModel.create(userData);
-      createdUsers.push(user);
-      console.log(`✅ Created ${userData.role}: ${userData.firstName} ${userData.lastName}`);
+    // Get existing drugs for analytics
+    const drugs = await Drug.findAll();
+    if (drugs.length === 0) {
+      console.log('⚠️  No drugs found. Please run drug population scripts first.');
+      return;
     }
 
-    const doctor = createdUsers.find(u => u.role === 'doctor');
-    const patients = createdUsers.filter(u => u.role === 'patient');
+    console.log(`📊 Found ${drugs.length} drugs for analytics`);
 
-    // Create diverse test drugs for comprehensive analytics
-    console.log('\n3️⃣ Creating diverse test drugs...');
-    const drugModel = new Drug();
-    
-    const testDrugs = [
-      {
-        name: "Metformin",
-        genericName: "Metformin",
-        manufacturer: "Various",
-        drugClass: "Biguanide",
-        description: "First-line treatment for type 2 diabetes",
-        commonSideEffects: ["nausea", "diarrhea", "stomach upset", "metallic taste"],
-        contraindications: ["kidney disease", "liver disease", "heart failure"],
-        dosageForms: ["tablet", "extended-release tablet"],
-        fdaApprovalDate: "1994-12-29",
-        isActive: true
-      },
-      {
-        name: "Atorvastatin",
-        genericName: "Atorvastatin",
-        manufacturer: "Various",
-        drugClass: "Statin",
-        description: "Used to lower cholesterol and prevent cardiovascular events",
-        commonSideEffects: ["muscle pain", "liver problems", "digestive issues"],
-        contraindications: ["active liver disease", "pregnancy"],
-        dosageForms: ["tablet"],
-        fdaApprovalDate: "1996-12-17",
-        isActive: true
-      },
-      {
-        name: "Omeprazole",
-        genericName: "Omeprazole",
-        manufacturer: "Various",
-        drugClass: "Proton Pump Inhibitor",
-        description: "Used to treat acid reflux and stomach ulcers",
-        commonSideEffects: ["headache", "nausea", "diarrhea", "stomach pain"],
-        contraindications: ["hypersensitivity to PPIs"],
-        dosageForms: ["capsule", "tablet"],
-        fdaApprovalDate: "1989-09-13",
-        isActive: true
-      },
-      {
-        name: "Sertraline",
-        genericName: "Sertraline",
-        manufacturer: "Various",
-        drugClass: "SSRI",
-        description: "Antidepressant used to treat depression and anxiety",
-        commonSideEffects: ["nausea", "insomnia", "dizziness", "dry mouth"],
-        contraindications: ["MAOI use", "pimozide use"],
-        dosageForms: ["tablet", "oral concentrate"],
-        fdaApprovalDate: "1991-12-30",
-        isActive: true
-      },
-      {
-        name: "Losartan",
-        genericName: "Losartan",
-        manufacturer: "Various",
-        drugClass: "ARB",
-        description: "Used to treat high blood pressure and diabetic kidney disease",
-        commonSideEffects: ["dizziness", "fatigue", "cough", "chest pain"],
-        contraindications: ["pregnancy", "severe liver disease"],
-        dosageForms: ["tablet"],
-        fdaApprovalDate: "1995-04-14",
-        isActive: true
-      }
-    ];
-
-    const createdDrugs = [];
-    for (const drugData of testDrugs) {
-      const drug = await drugModel.create(drugData);
-      createdDrugs.push(drug);
-      console.log(`✅ Created drug: ${drugData.name}`);
-    }
-
-    // Create prescriptions for different drugs
-    console.log('\n4️⃣ Creating prescriptions...');
-    const prescriptionModel = new Prescription();
-    
-    const prescriptions = [];
-    
-    // Create prescriptions for each patient with different drugs
-    const prescriptionData = [
-      { patient: patients[0], drug: createdDrugs[0], dosage: '500mg', frequency: 'twice daily' }, // Metformin
-      { patient: patients[1], drug: createdDrugs[1], dosage: '20mg', frequency: 'once daily' },   // Atorvastatin
-      { patient: patients[2], drug: createdDrugs[2], dosage: '20mg', frequency: 'once daily' }, // Omeprazole
-      { patient: patients[3], drug: createdDrugs[3], dosage: '50mg', frequency: 'once daily' }, // Sertraline
-      { patient: patients[4], drug: createdDrugs[4], dosage: '50mg', frequency: 'once daily' }, // Losartan
-    ];
-
-    for (const data of prescriptionData) {
-      const prescription = await prescriptionModel.create({
-        patientId: data.patient.id,
-        doctorId: doctor.id,
-        drugId: data.drug.id,
-        dosage: data.dosage,
-        frequency: data.frequency,
-        startDate: new Date(Date.now() - 45 * 24 * 60 * 60 * 1000), // 45 days ago
-        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
-        isActive: true,
-        instructions: 'Take as directed'
-      });
-      prescriptions.push(prescription);
-      console.log(`✅ Created prescription for ${data.patient.firstName} - ${data.drug.name}`);
-    }
-
-    // Create diverse side effects for analytics
-    console.log('\n5️⃣ Creating diverse side effects for analytics...');
-    const sideEffectModel = new SideEffect();
-    
-    // Side effects data organized by drug and severity
-    const sideEffectsData = [
-      // Metformin side effects
-      { drug: createdDrugs[0], effects: [
-        { description: 'Mild nausea after meals', severity: 'mild', isConcerning: false },
-        { description: 'Occasional diarrhea', severity: 'mild', isConcerning: false },
-        { description: 'Stomach upset', severity: 'mild', isConcerning: false },
-        { description: 'Metallic taste in mouth', severity: 'mild', isConcerning: false },
-        { description: 'Severe nausea and vomiting', severity: 'severe', isConcerning: true },
-        { description: 'Persistent diarrhea', severity: 'moderate', isConcerning: true }
-      ]},
-      // Atorvastatin side effects
-      { drug: createdDrugs[1], effects: [
-        { description: 'Mild muscle aches', severity: 'mild', isConcerning: false },
-        { description: 'Occasional headache', severity: 'mild', isConcerning: false },
-        { description: 'Digestive discomfort', severity: 'mild', isConcerning: false },
-        { description: 'Severe muscle pain', severity: 'severe', isConcerning: true },
-        { description: 'Liver enzyme elevation', severity: 'moderate', isConcerning: true },
-        { description: 'Memory problems', severity: 'moderate', isConcerning: true }
-      ]},
-      // Omeprazole side effects
-      { drug: createdDrugs[2], effects: [
-        { description: 'Mild headache', severity: 'mild', isConcerning: false },
-        { description: 'Occasional nausea', severity: 'mild', isConcerning: false },
-        { description: 'Stomach pain', severity: 'mild', isConcerning: false },
-        { description: 'Diarrhea', severity: 'mild', isConcerning: false },
-        { description: 'Severe headache', severity: 'severe', isConcerning: true },
-        { description: 'Persistent nausea', severity: 'moderate', isConcerning: true }
-      ]},
-      // Sertraline side effects
-      { drug: createdDrugs[3], effects: [
-        { description: 'Mild nausea', severity: 'mild', isConcerning: false },
-        { description: 'Insomnia', severity: 'mild', isConcerning: false },
-        { description: 'Dizziness', severity: 'mild', isConcerning: false },
-        { description: 'Dry mouth', severity: 'mild', isConcerning: false },
-        { description: 'Severe anxiety', severity: 'severe', isConcerning: true },
-        { description: 'Suicidal thoughts', severity: 'severe', isConcerning: true }
-      ]},
-      // Losartan side effects
-      { drug: createdDrugs[4], effects: [
-        { description: 'Mild dizziness', severity: 'mild', isConcerning: false },
-        { description: 'Fatigue', severity: 'mild', isConcerning: false },
-        { description: 'Dry cough', severity: 'mild', isConcerning: false },
-        { description: 'Chest pain', severity: 'moderate', isConcerning: true },
-        { description: 'Severe dizziness', severity: 'severe', isConcerning: true },
-        { description: 'Fainting episodes', severity: 'severe', isConcerning: true }
-      ]}
-    ];
-
-    let totalSideEffects = 0;
-    for (const drugData of sideEffectsData) {
-      const prescription = prescriptions.find(p => p.drugId === drugData.drug.id);
-      
-      for (const effect of drugData.effects) {
-        // Create multiple instances of each side effect over time
-        const instances = Math.floor(Math.random() * 5) + 1; // 1-5 instances
-        
-        for (let i = 0; i < instances; i++) {
-          const effectDate = new Date();
-          effectDate.setDate(effectDate.getDate() - Math.random() * 30); // Last 30 days
-          
-          await sideEffectModel.create({
-            ...effect,
-            prescriptionId: prescription.id,
-            drugId: drugData.drug.id,
-            patientId: prescription.patientId,
-            isAnonymous: true,
-            createdAt: effectDate
-          });
-          totalSideEffects++;
-        }
-      }
-    }
-
-    console.log(`✅ Created ${totalSideEffects} diverse side effects`);
-
-    // Create some existing analytics alerts for context
-    console.log('\n6️⃣ Creating existing analytics alerts...');
-    const analyticsAlertModel = new AnalyticsAlert();
-    
-    const existingAlerts = [
+    // Create side effect spike alerts
+    console.log('\n🚨 Creating side effect spike alerts...');
+    const spikeAlerts = [
       {
         alertType: 'side_effect_spike',
-        title: 'Side Effect Spike Detected for Metformin',
-        description: 'A 25% increase in side effects has been detected for Metformin over the past 30 days.',
-        severity: 'medium',
-        drugIds: [createdDrugs[0].id],
-        affectedPatientCount: 12,
-        confidenceScore: 0.85,
-        isResolved: false,
-        createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000), // 5 days ago
+        title: 'Critical Spike: Aspirin Side Effects',
+        description: 'Significant increase in aspirin-related side effects reported in the last 7 days. 25 reports vs 4 baseline average (625% increase).',
+        severity: 'high',
+        affectedPatientCount: 25,
+        confidenceScore: 0.95,
         dataPoints: {
-          recentRate: 0.4,
-          baselineRate: 0.32,
-          increaseRatio: 0.25,
-          timeWindow: 30
+          drugName: 'Aspirin',
+          recentCount: 25,
+          baselineCount: 4,
+          spikeRatio: 6.25,
+          severityDistribution: { mild: 8, moderate: 12, severe: 5 },
+          timeWindow: 7,
+          concerningReports: 18
         },
         recommendations: [
-          'Review prescribing guidelines',
-          'Consider additional monitoring',
-          'Investigate potential causes'
+          'Immediate review of recent aspirin prescriptions',
+          'Consider temporary suspension of new prescriptions',
+          'Implement enhanced patient monitoring protocol',
+          'Investigate potential batch contamination',
+          'Notify regulatory authorities if pattern continues'
+        ]
+      },
+      {
+        alertType: 'side_effect_spike',
+        title: 'Moderate Spike: Warfarin Bleeding Events',
+        description: 'Increased bleeding events reported with warfarin. 15 reports vs 3 baseline average (400% increase).',
+        severity: 'medium',
+        affectedPatientCount: 15,
+        confidenceScore: 0.85,
+        dataPoints: {
+          drugName: 'Warfarin',
+          recentCount: 15,
+          baselineCount: 3,
+          spikeRatio: 4.0,
+          severityDistribution: { mild: 5, moderate: 7, severe: 3 },
+          timeWindow: 7,
+          concerningReports: 10
+        },
+        recommendations: [
+          'Review INR monitoring protocols',
+          'Check for drug interactions in recent prescriptions',
+          'Consider dose adjustments for high-risk patients',
+          'Enhance patient education on bleeding signs'
+        ]
+      },
+      {
+        alertType: 'side_effect_spike',
+        title: 'Minor Spike: Metformin Gastrointestinal Effects',
+        description: 'Slight increase in GI side effects with metformin. 12 reports vs 5 baseline average (140% increase).',
+        severity: 'low',
+        affectedPatientCount: 12,
+        confidenceScore: 0.70,
+        dataPoints: {
+          drugName: 'Metformin',
+          recentCount: 12,
+          baselineCount: 5,
+          spikeRatio: 1.4,
+          severityDistribution: { mild: 8, moderate: 3, severe: 1 },
+          timeWindow: 14,
+          concerningReports: 4
+        },
+        recommendations: [
+          'Review dosing instructions with patients',
+          'Consider extended-release formulations',
+          'Monitor patient adherence to food recommendations'
+        ]
+      }
+    ];
+
+    for (const alertData of spikeAlerts) {
+      const [alert, created] = await AnalyticsAlert.findOrCreate({
+        where: {
+          alertType: alertData.alertType,
+          title: alertData.title
+        },
+        defaults: {
+          ...alertData,
+          createdAt: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000) // Random time in last 7 days
+        }
+      });
+      console.log(`${created ? '✅ Created' : '⚠️  Exists'}: ${alert.title}`);
+    }
+
+    // Create drug interaction alerts
+    console.log('\n🔗 Creating drug interaction alerts...');
+    const interactionAlerts = [
+      {
+        alertType: 'drug_interaction',
+        title: 'Critical Interaction: Warfarin + Aspirin',
+        description: 'High-risk drug interaction detected between warfarin and aspirin. Multiple patients affected with severe bleeding risk.',
+        severity: 'high',
+        affectedPatientCount: 8,
+        confidenceScore: 0.98,
+        dataPoints: {
+          drug1: 'Warfarin',
+          drug2: 'Aspirin',
+          interactionSeverity: 'major',
+          affectedPatients: 8,
+          timeFrame: 'Last 24 hours',
+          riskLevel: 'Critical'
+        },
+        recommendations: [
+          'Immediate review of all patients on both medications',
+          'Consider discontinuing aspirin in warfarin patients',
+          'Implement enhanced INR monitoring',
+          'Educate patients about bleeding risk',
+          'Consider alternative pain management'
         ]
       },
       {
         alertType: 'drug_interaction',
-        title: 'Potential Drug Interaction Detected: Atorvastatin + Grapefruit',
-        description: 'Grapefruit consumption may increase Atorvastatin levels, increasing risk of side effects.',
-        severity: 'high',
-        drugIds: [createdDrugs[1].id],
-        affectedPatientCount: 3,
-        confidenceScore: 0.92,
-        isResolved: false,
-        createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), // 2 days ago
+        title: 'Moderate Interaction: Furosemide + Digoxin',
+        description: 'Moderate drug interaction between furosemide and digoxin. Risk of digoxin toxicity due to hypokalemia.',
+        severity: 'medium',
+        affectedPatientCount: 5,
+        confidenceScore: 0.88,
         dataPoints: {
-          analysis: {
-            hasInteractions: true,
-            confidence: 0.92,
-            severity: 'major',
-            description: 'Grapefruit inhibits CYP3A4 enzyme, increasing statin levels'
-          }
+          drug1: 'Furosemide',
+          drug2: 'Digoxin',
+          interactionSeverity: 'moderate',
+          affectedPatients: 5,
+          timeFrame: 'Last 48 hours',
+          riskLevel: 'Moderate'
         },
         recommendations: [
-          'Advise patients to avoid grapefruit',
-          'Monitor for muscle pain symptoms',
-          'Consider dose reduction if needed'
+          'Monitor potassium levels closely',
+          'Consider potassium supplementation',
+          'Adjust digoxin dosing if needed',
+          'Educate patients about toxicity signs'
+        ]
+      },
+      {
+        alertType: 'drug_interaction',
+        title: 'Minor Interaction: Metformin + Furosemide',
+        description: 'Minor interaction between metformin and furosemide. Potential for increased metformin levels.',
+        severity: 'low',
+        affectedPatientCount: 3,
+        confidenceScore: 0.65,
+        dataPoints: {
+          drug1: 'Metformin',
+          drug2: 'Furosemide',
+          interactionSeverity: 'minor',
+          affectedPatients: 3,
+          timeFrame: 'Last 72 hours',
+          riskLevel: 'Low'
+        },
+        recommendations: [
+          'Monitor kidney function',
+          'Consider dose adjustments',
+          'Watch for lactic acidosis signs'
         ]
       }
     ];
 
-    for (const alertData of existingAlerts) {
-      await analyticsAlertModel.create(alertData);
-      console.log(`✅ Created alert: ${alertData.title}`);
+    for (const alertData of interactionAlerts) {
+      const [alert, created] = await AnalyticsAlert.findOrCreate({
+        where: {
+          alertType: alertData.alertType,
+          title: alertData.title
+        },
+        defaults: {
+          ...alertData,
+          createdAt: new Date(Date.now() - Math.random() * 3 * 24 * 60 * 60 * 1000) // Random time in last 3 days
+        }
+      });
+      console.log(`${created ? '✅ Created' : '⚠️  Exists'}: ${alert.title}`);
     }
 
-    // Clean up test data
-    console.log('\n7️⃣ Cleaning up test data...');
-    await db.collection('test').doc('analytics-setup').delete();
-    console.log('✅ Cleanup complete\n');
+    // Create resolved alerts for historical data
+    console.log('\n✅ Creating resolved alerts for historical context...');
+    const resolvedAlerts = [
+      {
+        alertType: 'side_effect_spike',
+        title: 'Resolved: Ibuprofen Stomach Issues',
+        description: 'Previous spike in ibuprofen-related stomach issues has been resolved after batch recall.',
+        severity: 'medium',
+        affectedPatientCount: 20,
+        confidenceScore: 0.90,
+        isResolved: true,
+        resolvedAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000), // 14 days ago
+        dataPoints: {
+          drugName: 'Ibuprofen',
+          recentCount: 20,
+          baselineCount: 3,
+          spikeRatio: 6.67,
+          resolution: 'Batch recall implemented',
+          timeToResolution: '3 days'
+        },
+        recommendations: [
+          'Batch recall completed',
+          'New batch tested and approved',
+          'Enhanced quality control implemented'
+        ]
+      },
+      {
+        alertType: 'drug_interaction',
+        title: 'Resolved: Simvastatin + Grapefruit',
+        description: 'Drug interaction alert resolved after patient education about grapefruit consumption.',
+        severity: 'low',
+        affectedPatientCount: 1,
+        confidenceScore: 0.75,
+        isResolved: true,
+        resolvedAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // 7 days ago
+        dataPoints: {
+          drug1: 'Simvastatin',
+          drug2: 'Grapefruit',
+          interactionSeverity: 'moderate',
+          resolution: 'Patient education provided',
+          timeToResolution: '1 day'
+        },
+        recommendations: [
+          'Patient educated about grapefruit interaction',
+          'Dietary counseling provided',
+          'Follow-up scheduled'
+        ]
+      }
+    ];
 
-    console.log('🎉 Analytics Report Data Population Complete!');
-    console.log('\n📊 Summary:');
-    console.log(`- Created ${createdUsers.length} users (1 doctor, ${patients.length} patients)`);
-    console.log(`- Created ${createdDrugs.length} diverse drugs across different classes`);
-    console.log(`- Created ${prescriptions.length} prescriptions`);
-    console.log(`- Created ${totalSideEffects} diverse side effects`);
-    console.log(`- Created ${existingAlerts.length} existing analytics alerts`);
-    console.log('\n📈 This data will generate comprehensive analytics reports!');
-    console.log('   - Side effect trends across different drug classes');
-    console.log('   - Severity distribution analysis');
-    console.log('   - Drug-specific side effect patterns');
-    console.log('   - Patient safety insights');
-    console.log('   Run the analytics service to generate detailed reports.');
+    for (const alertData of resolvedAlerts) {
+      const [alert, created] = await AnalyticsAlert.findOrCreate({
+        where: {
+          alertType: alertData.alertType,
+          title: alertData.title
+        },
+        defaults: {
+          ...alertData,
+          createdAt: new Date(alertData.resolvedAt.getTime() - 2 * 24 * 60 * 60 * 1000) // 2 days before resolution
+        }
+      });
+      console.log(`${created ? '✅ Created' : '⚠️  Exists'}: ${alert.title} (Resolved)`);
+    }
+
+    // Create summary statistics
+    console.log('\n📈 Creating analytics summary...');
+    const totalAlerts = await AnalyticsAlert.count();
+    const activeAlerts = await AnalyticsAlert.count({ where: { isResolved: false } });
+    const resolvedAlertsCount = await AnalyticsAlert.count({ where: { isResolved: true } });
+    const highSeverityAlerts = await AnalyticsAlert.count({ 
+      where: { 
+        severity: 'high',
+        isResolved: false 
+      } 
+    });
+
+    console.log('\n🎉 Analytics report data population completed!');
+    console.log(`📊 Total alerts: ${totalAlerts}`);
+    console.log(`🚨 Active alerts: ${activeAlerts}`);
+    console.log(`✅ Resolved alerts: ${resolvedAlertsCount}`);
+    console.log(`🔴 High severity alerts: ${highSeverityAlerts}`);
+    console.log('📈 Analytics dashboard ready for testing');
 
   } catch (error) {
-    console.error('❌ Analytics report data population failed:', error.message);
+    console.error('❌ Error populating analytics report data:', error);
+  } finally {
+    await sequelize.close();
   }
 }
 
-// Run the script
+// Run the population script
 populateAnalyticsReportData();

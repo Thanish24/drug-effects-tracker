@@ -3,8 +3,8 @@
 const { execSync } = require('child_process');
 const path = require('path');
 
-console.log('🚀 Drug Effects Tracker - Firestore Data Population Suite\n');
-console.log('This suite will populate your Firestore database with test data');
+console.log('🚀 Drug Effects Tracker - PostgreSQL Data Population Suite\n');
+console.log('This suite will populate your PostgreSQL database with test data');
 console.log('that triggers different types of analytics alerts.\n');
 
 async function runScript(scriptName, description) {
@@ -42,9 +42,9 @@ async function main() {
   ];
 
   console.log('🔧 Prerequisites:');
-  console.log('   - Firebase project configured');
-  console.log('   - .env file with Firebase credentials');
-  console.log('   - Firestore database enabled');
+  console.log('   - PostgreSQL database running');
+  console.log('   - .env file with database credentials');
+  console.log('   - Database created (medalert_pro)');
   console.log('\nPress Ctrl+C to cancel, or wait 5 seconds to continue...\n');
   
   // Wait 5 seconds
@@ -74,11 +74,11 @@ async function main() {
     console.log('\n🎉 All data population scripts completed successfully!');
     console.log('\n🧪 Next Steps:');
     console.log('   1. Run: node test-analytics-service.js');
-    console.log('   2. Check Firestore console for generated alerts');
+    console.log('   2. Check PostgreSQL database for generated alerts');
     console.log('   3. Test the analytics dashboard in your app');
   } else {
     console.log('\n⚠️ Some scripts failed. Check the errors above.');
-    console.log('   Make sure your Firebase configuration is correct.');
+    console.log('   Make sure your PostgreSQL configuration is correct.');
   }
 
   console.log('\n📚 Available Scripts:');

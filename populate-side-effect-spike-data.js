@@ -1,206 +1,205 @@
-const { db } = require('./server/config/firebase');
-const { Drug, SideEffect, Prescription, User } = require('./server/models/firebaseModels');
+const { sequelize, User, Drug, Prescription, SideEffect } = require('./server/models');
+const { Op } = require('sequelize');
 
 async function populateSideEffectSpikeData() {
-  console.log('🚨 Populating Firestore with Side Effect Spike Alert Data...\n');
+  console.log('🚨 Populating PostgreSQL with Side Effect Spike Alert Data...\n');
 
   try {
-    // Test connection
-    console.log('1️⃣ Testing Firebase connection...');
-    await db.collection('test').doc('spike-setup').set({ test: true });
-    console.log('✅ Firebase connection successful\n');
+    // Connect to database
+    await sequelize.authenticate();
+    console.log('✅ Database connection established.');
 
-    // Create test users (patients and doctors)
-    console.log('2️⃣ Creating test users...');
-    const userModel = new User();
+    // Create test users
+    console.log('👥 Creating test users...');
+    const testUsers = [];
     
-    const testUsers = [
-      {
-        email: 'doctor1@test.com',
-        password: 'password123',
-        firstName: 'Dr. Sarah',
-        lastName: 'Johnson',
-        role: 'doctor',
-        licenseNumber: 'MD123456',
-        specialization: 'Internal Medicine'
-      },
-      {
-        email: 'patient1@test.com',
-        password: 'password123',
-        firstName: 'John',
-        lastName: 'Smith',
-        role: 'patient',
-        dateOfBirth: '1985-03-15',
-        phoneNumber: '+1234567890'
-      },
-      {
-        email: 'patient2@test.com',
-        password: 'password123',
-        firstName: 'Jane',
-        lastName: 'Doe',
-        role: 'patient',
-        dateOfBirth: '1990-07-22',
-        phoneNumber: '+1234567891'
-      },
-      {
-        email: 'patient3@test.com',
-        password: 'password123',
-        firstName: 'Mike',
-        lastName: 'Wilson',
-        role: 'patient',
-        dateOfBirth: '1978-11-08',
-        phoneNumber: '+1234567892'
-      }
-    ];
-
-    const createdUsers = [];
-    for (const userData of testUsers) {
-      const user = await userModel.create(userData);
-      createdUsers.push(user);
-      console.log(`✅ Created ${userData.role}: ${userData.firstName} ${userData.lastName}`);
+    // Create patients
+    for (let i = 1; i <= 5; i++) {
+      const [user, created] = await User.findOrCreate({
+        where: { email: `patient${i}@test.com` },
+        defaults: {
+          email: `patient${i}@test.com`,
+          password: 'password123',
+          firstName: `Patient`,
+          lastName: `${i}`,
+          role: 'patient',
+          dateOfBirth: new Date(1980 + i, 0, 1),
+          phone: `555-000${i}`,
+          address: `${i}00 Test Street, Test City, TC 12345`
+        }
+      });
+      testUsers.push(user);
+      console.log(`${created ? '✅ Created' : '⚠️  Exists'}: ${user.firstName} ${user.lastName} (${user.role})`);
     }
 
-    const doctor = createdUsers.find(u => u.role === 'doctor');
-    const patients = createdUsers.filter(u => u.role === 'patient');
+    // Create doctors
+    for (let i = 1; i <= 2; i++) {
+      const [user, created] = await User.findOrCreate({
+        where: { email: `doctor${i}@test.com` },
+        defaults: {
+          email: `doctor${i}@test.com`,
+          password: 'password123',
+          firstName: `Dr. Doctor`,
+          lastName: `${i}`,
+          role: 'doctor',
+          medicalLicense: `MD${i.toString().padStart(6, '0')}`,
+          specialization: i === 1 ? 'Cardiology' : 'Internal Medicine',
+          phone: `555-100${i}`,
+          address: `${i}00 Medical Plaza, Medical City, MC 54321`
+        }
+      });
+      testUsers.push(user);
+      console.log(`${created ? '✅ Created' : '⚠️  Exists'}: ${user.firstName} ${user.lastName} (${user.role})`);
+    }
 
     // Create test drugs
-    console.log('\n3️⃣ Creating test drugs...');
-    const drugModel = new Drug();
+    console.log('\n💊 Creating test drugs...');
+    const testDrugs = [];
+    const drugNames = ['Aspirin', 'Warfarin', 'Metformin', 'Lisinopril', 'Atorvastatin'];
     
-    const testDrugs = [
-      {
-        name: "Lisinopril",
-        genericName: "Lisinopril",
-        manufacturer: "Various",
-        drugClass: "ACE Inhibitor",
-        description: "Used to treat high blood pressure and heart failure",
-        commonSideEffects: ["dry cough", "dizziness", "fatigue", "headache"],
-        contraindications: ["pregnancy", "angioedema history"],
-        dosageForms: ["tablet", "oral solution"],
-        fdaApprovalDate: "1987-12-29",
-        isActive: true
-      },
-      {
-        name: "Metformin",
-        genericName: "Metformin",
-        manufacturer: "Various",
-        drugClass: "Biguanide",
-        description: "Used to treat type 2 diabetes",
-        commonSideEffects: ["nausea", "diarrhea", "stomach upset"],
-        contraindications: ["kidney disease", "liver disease"],
-        dosageForms: ["tablet", "extended-release tablet"],
-        fdaApprovalDate: "1994-12-29",
-        isActive: true
-      }
-    ];
-
-    const createdDrugs = [];
-    for (const drugData of testDrugs) {
-      const drug = await drugModel.create(drugData);
-      createdDrugs.push(drug);
-      console.log(`✅ Created drug: ${drugData.name}`);
+    for (const drugName of drugNames) {
+      const [drug, created] = await Drug.findOrCreate({
+        where: { name: drugName },
+        defaults: {
+          name: drugName,
+          genericName: drugName.toLowerCase(),
+          manufacturer: 'Test Pharma',
+          drugClass: 'Test Class',
+          description: `Test drug: ${drugName}`,
+          commonSideEffects: ['nausea', 'headache', 'dizziness'],
+          contraindications: ['allergy'],
+          dosageForms: ['tablet'],
+          fdaApprovalDate: new Date('2020-01-01')
+        }
+      });
+      testDrugs.push(drug);
+      console.log(`${created ? '✅ Created' : '⚠️  Exists'}: ${drug.name}`);
     }
 
     // Create prescriptions
-    console.log('\n4️⃣ Creating prescriptions...');
-    const prescriptionModel = new Prescription();
-    
+    console.log('\n📋 Creating prescriptions...');
     const prescriptions = [];
-    for (let i = 0; i < patients.length; i++) {
-      const prescription = await prescriptionModel.create({
-        patientId: patients[i].id,
-        doctorId: doctor.id,
-        drugId: createdDrugs[0].id, // All patients on Lisinopril
-        dosage: '10mg',
-        frequency: 'once daily',
-        startDate: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000), // 60 days ago
-        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
-        isActive: true,
-        instructions: 'Take with food'
+    const doctors = testUsers.filter(u => u.role === 'doctor');
+    const patients = testUsers.filter(u => u.role === 'patient');
+
+    for (let i = 0; i < 10; i++) {
+      const patient = patients[i % patients.length];
+      const doctor = doctors[i % doctors.length];
+      const drug = testDrugs[i % testDrugs.length];
+
+      const [prescription, created] = await Prescription.findOrCreate({
+        where: {
+          patientId: patient.id,
+          drugId: drug.id,
+          doctorId: doctor.id
+        },
+        defaults: {
+          patientId: patient.id,
+          drugId: drug.id,
+          doctorId: doctor.id,
+          dosage: '10mg',
+          frequency: 'Once daily',
+          startDate: new Date(),
+          endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
+          instructions: 'Take with food'
+        }
       });
       prescriptions.push(prescription);
-      console.log(`✅ Created prescription for ${patients[i].firstName}`);
+      console.log(`${created ? '✅ Created' : '⚠️  Exists'}: ${drug.name} for ${patient.firstName} ${patient.lastName}`);
     }
 
-    // Create baseline side effects (older data - 60-30 days ago)
-    console.log('\n5️⃣ Creating baseline side effects (older data)...');
-    const sideEffectModel = new SideEffect();
+    // Create side effects with spike pattern
+    console.log('\n🚨 Creating side effects with spike pattern...');
     
-    const baselineSideEffects = [
-      { description: 'Mild dizziness', severity: 'mild', isConcerning: false },
-      { description: 'Occasional headache', severity: 'mild', isConcerning: false },
-      { description: 'Slight fatigue', severity: 'mild', isConcerning: false }
-    ];
-
-    for (let i = 0; i < 15; i++) { // Create 15 baseline side effects
-      const sideEffectData = baselineSideEffects[i % baselineSideEffects.length];
+    // Create baseline side effects (older data)
+    const baselineDate = new Date();
+    baselineDate.setDate(baselineDate.getDate() - 60); // 60 days ago
+    
+    for (let i = 0; i < 20; i++) {
       const prescription = prescriptions[i % prescriptions.length];
+      const sideEffectDate = new Date(baselineDate);
+      sideEffectDate.setDate(baselineDate.getDate() + Math.floor(Math.random() * 30));
       
-      const baselineDate = new Date();
-      baselineDate.setDate(baselineDate.getDate() - (45 + Math.random() * 15)); // 45-60 days ago
-      
-      await sideEffectModel.create({
-        ...sideEffectData,
+      await SideEffect.create({
         prescriptionId: prescription.id,
-        drugId: createdDrugs[0].id,
+        drugId: prescription.drugId,
         patientId: prescription.patientId,
+        description: `Baseline side effect ${i + 1}`,
+        severity: ['mild', 'moderate', 'severe'][Math.floor(Math.random() * 3)],
+        isConcerning: Math.random() > 0.8,
         isAnonymous: true,
-        createdAt: baselineDate
+        createdAt: sideEffectDate
       });
     }
-    console.log('✅ Created 15 baseline side effects');
 
-    // Create recent side effects (last 30 days) - HIGH VOLUME to trigger spike
-    console.log('\n6️⃣ Creating recent side effects (spike data)...');
+    // Create recent spike in side effects (last 7 days)
+    const spikeDate = new Date();
+    spikeDate.setDate(spikeDate.getDate() - 7);
     
-    const spikeSideEffects = [
-      { description: 'Severe dizziness', severity: 'severe', isConcerning: true },
-      { description: 'Persistent headache', severity: 'moderate', isConcerning: true },
-      { description: 'Extreme fatigue', severity: 'severe', isConcerning: true },
-      { description: 'Nausea and vomiting', severity: 'moderate', isConcerning: true },
-      { description: 'Chest pain', severity: 'severe', isConcerning: true },
-      { description: 'Shortness of breath', severity: 'severe', isConcerning: true },
-      { description: 'Rapid heartbeat', severity: 'moderate', isConcerning: true },
-      { description: 'Swelling in hands/feet', severity: 'moderate', isConcerning: true }
-    ];
-
-    for (let i = 0; i < 50; i++) { // Create 50 recent side effects to trigger spike
-      const sideEffectData = spikeSideEffects[i % spikeSideEffects.length];
-      const prescription = prescriptions[i % prescriptions.length];
+    const spikeDrug = testDrugs[0]; // Aspirin
+    const spikePrescriptions = prescriptions.filter(p => p.drugId === spikeDrug.id);
+    
+    console.log(`📈 Creating spike for ${spikeDrug.name}...`);
+    
+    for (let i = 0; i < 25; i++) { // 25 recent reports (vs 4 baseline)
+      const prescription = spikePrescriptions[i % spikePrescriptions.length];
+      const sideEffectDate = new Date(spikeDate);
+      sideEffectDate.setDate(spikeDate.getDate() + Math.floor(Math.random() * 7));
       
-      const recentDate = new Date();
-      recentDate.setDate(recentDate.getDate() - Math.random() * 30); // Last 30 days
+      const severity = ['mild', 'moderate', 'severe'][Math.floor(Math.random() * 3)];
+      const isConcerning = severity === 'severe' || Math.random() > 0.7;
       
-      await sideEffectModel.create({
-        ...sideEffectData,
+      await SideEffect.create({
         prescriptionId: prescription.id,
-        drugId: createdDrugs[0].id,
+        drugId: prescription.drugId,
         patientId: prescription.patientId,
+        description: `Recent spike side effect ${i + 1}: ${['nausea', 'headache', 'dizziness', 'stomach pain', 'bleeding'][Math.floor(Math.random() * 5)]}`,
+        severity: severity,
+        isConcerning: isConcerning,
         isAnonymous: true,
-        createdAt: recentDate
+        createdAt: sideEffectDate
       });
     }
-    console.log('✅ Created 50 recent side effects (spike data)');
 
-    // Clean up test data
-    console.log('\n7️⃣ Cleaning up test data...');
-    await db.collection('test').doc('spike-setup').delete();
-    console.log('✅ Cleanup complete\n');
+    // Create another spike for a different drug
+    const spikeDrug2 = testDrugs[1]; // Warfarin
+    const spikePrescriptions2 = prescriptions.filter(p => p.drugId === spikeDrug2.id);
+    
+    console.log(`📈 Creating spike for ${spikeDrug2.name}...`);
+    
+    for (let i = 0; i < 15; i++) { // 15 recent reports
+      const prescription = spikePrescriptions2[i % spikePrescriptions2.length];
+      const sideEffectDate = new Date(spikeDate);
+      sideEffectDate.setDate(spikeDate.getDate() + Math.floor(Math.random() * 7));
+      
+      const severity = ['mild', 'moderate', 'severe'][Math.floor(Math.random() * 3)];
+      const isConcerning = severity === 'severe' || Math.random() > 0.6;
+      
+      await SideEffect.create({
+        prescriptionId: prescription.id,
+        drugId: prescription.drugId,
+        patientId: prescription.patientId,
+        description: `Warfarin spike effect ${i + 1}: ${['bleeding', 'bruising', 'nausea', 'dizziness'][Math.floor(Math.random() * 4)]}`,
+        severity: severity,
+        isConcerning: isConcerning,
+        isAnonymous: true,
+        createdAt: sideEffectDate
+      });
+    }
 
-    console.log('🎉 Side Effect Spike Alert Data Population Complete!');
-    console.log('\n📊 Summary:');
-    console.log(`- Created ${createdUsers.length} users (1 doctor, ${patients.length} patients)`);
-    console.log(`- Created ${createdDrugs.length} drugs`);
-    console.log(`- Created ${prescriptions.length} prescriptions`);
-    console.log(`- Created 15 baseline side effects (older data)`);
-    console.log(`- Created 50 recent side effects (spike data)`);
-    console.log('\n🚨 This data will trigger a side effect spike alert for Lisinopril!');
-    console.log('   Run the analytics service to see the alert generated.');
+    console.log('\n🎉 Side effect spike data population completed!');
+    console.log(`👥 Created ${testUsers.length} users`);
+    console.log(`💊 Created ${testDrugs.length} drugs`);
+    console.log(`📋 Created ${prescriptions.length} prescriptions`);
+    console.log(`🚨 Created side effects with spike patterns`);
+    console.log('📊 Spike data ready for analytics testing');
 
   } catch (error) {
-    console.error('❌ Side effect spike data population failed:', error.message);
+    console.error('❌ Error populating side effect spike data:', error);
+  } finally {
+    await sequelize.close();
   }
 }
 
-// Run the script
+// Run the population script
 populateSideEffectSpikeData();

@@ -1,5 +1,5 @@
 const express = require('express');
-const { AnalyticsAlert, SideEffect, Drug, DrugInteraction } = require('../models/firebaseModels');
+const { AnalyticsAlert, SideEffect, Drug, DrugInteraction } = require('../models');
 const AnalyticsService = require('../services/analyticsService');
 const { requireDoctor } = require('../middleware/auth');
 
@@ -108,12 +108,6 @@ router.get('/alerts', async (req, res) => {
     
     const { count, rows: alerts } = await AnalyticsAlert.findAndCountAll({
       where: whereClause,
-      include: [{
-        model: Drug,
-        as: 'drugs',
-        attributes: ['id', 'name'],
-        through: { attributes: [] }
-      }],
       limit: parseInt(limit),
       offset: parseInt(offset),
       order: [['createdAt', 'DESC']]
@@ -139,14 +133,7 @@ router.get('/alerts/:id', async (req, res) => {
   try {
     const { id } = req.params;
     
-    const alert = await AnalyticsAlert.findByPk(id, {
-      include: [{
-        model: Drug,
-        as: 'drugs',
-        attributes: ['id', 'name'],
-        through: { attributes: [] }
-      }]
-    });
+    const alert = await AnalyticsAlert.findByPk(id);
 
     if (!alert) {
       return res.status(404).json({ error: 'Alert not found' });
@@ -266,7 +253,7 @@ router.get('/trends', async (req, res) => {
       attributes: [
         [require('sequelize').fn('DATE', require('sequelize').col('createdAt')), 'date'],
         [require('sequelize').fn('COUNT', require('sequelize').col('id')), 'count'],
-        [require('sequelize').fn('COUNT', require('sequelize').col('CASE WHEN "isConcerning" = true THEN 1 END')), 'concerningCount']
+        [require('sequelize').fn('COUNT', require('sequelize').literal('CASE WHEN "isConcerning" = true THEN 1 END')), 'concerningCount']
       ],
       where: whereClause,
       group: [require('sequelize').fn('DATE', require('sequelize').col('createdAt'))],

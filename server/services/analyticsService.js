@@ -1,4 +1,5 @@
-const { SideEffect, Drug, Prescription, DrugInteraction, AnalyticsAlert } = require('../models/firebaseModels');
+const { SideEffect, Drug, Prescription, DrugInteraction, AnalyticsAlert } = require('../models');
+const { Op } = require('sequelize');
 const LLMService = require('./llmService');
 
 class AnalyticsService {
@@ -8,187 +9,227 @@ class AnalyticsService {
       cutoffDate.setDate(cutoffDate.getDate() - timeWindow);
 
       // Get side effects for the drug in the time window
-      const sideEffectModel = new SideEffect();
-      const allSideEffects = await sideEffectModel.findAll();
-      const recentSideEffects = allSideEffects.filter(se => {
-        if (se.drugId !== drugId || se.isAnonymous !== true || !se.createdAt) return false;
-        
-        // Handle Firestore timestamp objects
-        let createdAt;
-        if (typeof se.createdAt === 'object' && se.createdAt.toDate) {
-          createdAt = se.createdAt.toDate();
-        } else if (typeof se.createdAt === 'object' && se.createdAt._seconds) {
-          createdAt = new Date(se.createdAt._seconds * 1000);
-        } else if (typeof se.createdAt === 'string') {
-          createdAt = new Date(se.createdAt);
-        } else {
-          createdAt = new Date(se.createdAt);
-        }
-        
-        return !isNaN(createdAt.getTime()) && createdAt >= cutoffDate;
+      const recentSideEffects = await SideEffect.findAll({
+        where: {
+          drugId,
+          isAnonymous: true,
+          createdAt: {
+            [Op.gte]: cutoffDate
+          }
+        },
+        include: [{
+          model: Drug,
+          as: 'drug',
+          attributes: ['name']
+        }]
       });
 
       // Get historical baseline (previous period)
       const baselineStart = new Date(cutoffDate);
       baselineStart.setDate(baselineStart.getDate() - timeWindow);
       
-      const baselineSideEffects = allSideEffects.filter(se => {
-        if (se.drugId !== drugId || se.isAnonymous !== true || !se.createdAt) return false;
-        
-        // Handle Firestore timestamp objects
-        let createdAt;
-        if (typeof se.createdAt === 'object' && se.createdAt.toDate) {
-          createdAt = se.createdAt.toDate();
-        } else if (typeof se.createdAt === 'object' && se.createdAt._seconds) {
-          createdAt = new Date(se.createdAt._seconds * 1000);
-        } else if (typeof se.createdAt === 'string') {
-          createdAt = new Date(se.createdAt);
-        } else {
-          createdAt = new Date(se.createdAt);
+      const baselineSideEffects = await SideEffect.findAll({
+        where: {
+          drugId,
+          isAnonymous: true,
+          createdAt: {
+            [Op.gte]: baselineStart,
+            [Op.lt]: cutoffDate
+          }
         }
-        
-        return !isNaN(createdAt.getTime()) && createdAt >= baselineStart && createdAt < cutoffDate;
       });
 
-      // Calculate rates
-      const recentRate = recentSideEffects.length / timeWindow;
-      const baselineRate = baselineSideEffects.length / timeWindow;
+      // Calculate spike metrics
+      const recentCount = recentSideEffects.length;
+      const baselineCount = baselineSideEffects.length;
+      const baselineAverage = baselineCount / timeWindow;
+      const recentAverage = recentCount / timeWindow;
       
-      // Check for significant increase
-      const threshold = parseFloat(process.env.SIDE_EFFECT_SPIKE_THRESHOLD) || 0.15;
-      const increaseRatio = (recentRate - baselineRate) / baselineRate;
+      // Calculate spike ratio
+      const spikeRatio = baselineAverage > 0 ? recentAverage / baselineAverage : recentAverage;
+      
+      // Determine if there's a significant spike (threshold: 2x baseline)
+      const isSpike = spikeRatio >= 2 && recentCount >= 5; // Minimum 5 reports for significance
+      
+      if (isSpike) {
+        // Get drug information
+        const drug = await Drug.findByPk(drugId);
+        
+        // Analyze severity distribution
+        const severityCounts = recentSideEffects.reduce((acc, se) => {
+          acc[se.severity] = (acc[se.severity] || 0) + 1;
+          return acc;
+        }, {});
 
-      if (increaseRatio > threshold && recentRate > 0.1) {
         // Create alert
-        const analyticsAlertModel = new AnalyticsAlert();
-        const alert = await analyticsAlertModel.create({
+        const alert = await AnalyticsAlert.create({
           alertType: 'side_effect_spike',
-          title: `Side Effect Spike Detected for ${recentSideEffects[0]?.drug?.name || 'Unknown Drug'}`,
-          description: `A ${(increaseRatio * 100).toFixed(1)}% increase in side effects has been detected for this drug over the past ${timeWindow} days.`,
-          severity: increaseRatio > 0.5 ? 'high' : 'medium',
-          drugIds: [drugId],
-          affectedPatientCount: recentSideEffects.length,
-          confidenceScore: Math.min(increaseRatio, 1.0),
+          title: `Side Effect Spike Detected: ${drug?.name || 'Unknown Drug'}`,
+          description: `Significant increase in side effect reports for ${drug?.name || 'this drug'}. Recent reports: ${recentCount}, Baseline average: ${baselineAverage.toFixed(1)}`,
+          severity: spikeRatio >= 4 ? 'high' : spikeRatio >= 2.5 ? 'medium' : 'low',
+          affectedPatientCount: recentCount,
+          confidenceScore: Math.min(spikeRatio / 4, 1), // Normalize to 0-1
           dataPoints: {
-            recentRate,
-            baselineRate,
-            increaseRatio,
+            recentCount,
+            baselineCount,
+            spikeRatio: spikeRatio.toFixed(2),
+            severityDistribution: severityCounts,
             timeWindow
           },
           recommendations: [
-            'Review prescribing guidelines',
-            'Consider additional monitoring',
-            'Investigate potential causes'
+            'Review recent prescriptions for this drug',
+            'Consider patient monitoring protocols',
+            'Evaluate if dosage adjustments are needed',
+            'Check for potential drug interactions'
           ]
         });
 
-        return alert;
+        return {
+          isSpike: true,
+          alert,
+          metrics: {
+            recentCount,
+            baselineCount,
+            spikeRatio: spikeRatio.toFixed(2),
+            severityDistribution: severityCounts
+          }
+        };
       }
 
-      return null;
+      return {
+        isSpike: false,
+        metrics: {
+          recentCount,
+          baselineCount,
+          spikeRatio: spikeRatio.toFixed(2)
+        }
+      };
     } catch (error) {
-      console.error('Side effect spike detection error:', error);
-      return null;
+      console.error('Error detecting side effect spikes:', error);
+      throw error;
     }
   }
 
-  static async detectDrugInteractions() {
+  static async detectDrugInteractions(prescriptionId) {
     try {
-      // Get all active prescriptions with multiple drugs
-      const prescriptionModel = new Prescription();
-      const prescriptions = await prescriptionModel.findAll({ isActive: true });
+      // Get prescription with drug information
+      const prescription = await Prescription.findByPk(prescriptionId, {
+        include: [{
+          model: Drug,
+          as: 'drug',
+          include: [{
+            model: Drug,
+            as: 'interactsWith',
+            through: {
+              attributes: ['severity', 'description', 'clinicalEffect', 'management', 'evidenceLevel']
+            }
+          }]
+        }]
+      });
 
-      // Group by patient
-      const patientDrugs = {};
-      const drugModel = new Drug();
-      
-      for (const prescription of prescriptions) {
-        if (!patientDrugs[prescription.patientId]) {
-          patientDrugs[prescription.patientId] = [];
-        }
-        // Get drug details
-        const drug = await drugModel.findById(prescription.drugId);
-        if (drug) {
-          patientDrugs[prescription.patientId].push(drug);
-        }
+      if (!prescription) {
+        throw new Error('Prescription not found');
       }
 
+      // Get all other active prescriptions for the same patient
+      const otherPrescriptions = await Prescription.findAll({
+        where: {
+          patientId: prescription.patientId,
+          id: { [Op.ne]: prescriptionId },
+          isActive: true
+        },
+        include: [{
+          model: Drug,
+          as: 'drug'
+        }]
+      });
+
       const interactions = [];
+      const currentDrug = prescription.drug;
 
-      // Check for patients on multiple drugs
-      for (const [patientId, drugs] of Object.entries(patientDrugs)) {
-        if (drugs.length > 1) {
-          // Get side effects for this patient
-          const patientPrescriptions = prescriptions.filter(p => p.patientId === patientId);
-          const prescriptionIds = patientPrescriptions.map(p => p.id);
-          
-          const sideEffectModel = new SideEffect();
-          const allPatientSideEffects = await sideEffectModel.findAll();
-          const patientSideEffects = allPatientSideEffects.filter(se => 
-            prescriptionIds.includes(se.prescriptionId)
-          );
+      // Check for known interactions
+      for (const otherPrescription of otherPrescriptions) {
+        const otherDrug = otherPrescription.drug;
+        
+        // Check if there's a known interaction
+        const knownInteraction = currentDrug.interactsWith.find(
+          interaction => interaction.id === otherDrug.id
+        );
 
-          if (patientSideEffects.length > 0) {
-            // Use LLM to analyze potential interactions
-            const drugNames = drugs.map(d => d.name);
-            const sideEffectDescriptions = patientSideEffects.map(se => ({
-              description: se.description,
-              severity: se.severity
-            }));
+        if (knownInteraction) {
+          interactions.push({
+            drug1: currentDrug.name,
+            drug2: otherDrug.name,
+            severity: knownInteraction.DrugInteraction.severity,
+            description: knownInteraction.DrugInteraction.description,
+            clinicalEffect: knownInteraction.DrugInteraction.clinicalEffect,
+            management: knownInteraction.DrugInteraction.management,
+            evidenceLevel: knownInteraction.DrugInteraction.evidenceLevel,
+            isKnown: true
+          });
+        } else {
+          // Use LLM to check for potential interactions
+          try {
+            const llmAnalysis = await LLMService.analyzeDrugInteraction(
+              currentDrug.name,
+              otherDrug.name,
+              currentDrug.description || '',
+              otherDrug.description || ''
+            );
 
-            const analysis = await LLMService.detectDrugInteractions(drugNames, sideEffectDescriptions);
-
-            if (analysis.hasInteractions && analysis.confidence > 0.7) {
-              // Check if this interaction is already known
-              const drugInteractionModel = new DrugInteraction();
-              const allInteractions = await drugInteractionModel.findAll();
-              const existingInteraction = allInteractions.find(interaction => 
-                (interaction.drugId1 === drugs[0].id && interaction.drugId2 === drugs[1].id) ||
-                (interaction.drugId1 === drugs[1].id && interaction.drugId2 === drugs[0].id)
-              );
-
-              if (!existingInteraction) {
-                // Create new interaction record
-                await DrugInteraction.create({
-                  drugId1: drugs[0].id,
-                  drugId2: drugs[1].id,
-                  severity: analysis.severity,
-                  description: analysis.description,
-                  clinicalEffect: analysis.description,
-                  management: analysis.recommendations.join('; '),
-                  evidenceLevel: 'fair',
-                  isDetectedByAnalytics: true,
-                  confidenceScore: analysis.confidence
-                });
-
-                // Create alert
-                const alert = await AnalyticsAlert.create({
-                  alertType: 'drug_interaction',
-                  title: `Potential Drug Interaction Detected: ${drugNames.join(' + ')}`,
-                  description: analysis.description,
-                  severity: analysis.severity === 'major' || analysis.severity === 'severe' ? 'high' : 'medium',
-                  drugIds: [drugs[0].id, drugs[1].id],
-                  affectedPatientCount: 1,
-                  confidenceScore: analysis.confidence,
-                  dataPoints: {
-                    analysis,
-                    patientId,
-                    sideEffects: sideEffectDescriptions
-                  },
-                  recommendations: analysis.recommendations
-                });
-
-                interactions.push(alert);
-              }
+            if (llmAnalysis.hasInteraction && llmAnalysis.confidence > 0.7) {
+              interactions.push({
+                drug1: currentDrug.name,
+                drug2: otherDrug.name,
+                severity: llmAnalysis.severity,
+                description: llmAnalysis.description,
+                clinicalEffect: llmAnalysis.clinicalEffect,
+                management: llmAnalysis.management,
+                evidenceLevel: 'AI Analysis',
+                isKnown: false,
+                confidence: llmAnalysis.confidence
+              });
             }
+          } catch (llmError) {
+            console.error('LLM analysis error:', llmError);
           }
         }
       }
 
-      return interactions;
+      // Create alerts for high-severity interactions
+      const highSeverityInteractions = interactions.filter(i => 
+        ['major', 'severe'].includes(i.severity)
+      );
+
+      for (const interaction of highSeverityInteractions) {
+        await AnalyticsAlert.create({
+          alertType: 'drug_interaction',
+          title: `Drug Interaction Alert: ${interaction.drug1} + ${interaction.drug2}`,
+          description: interaction.description,
+          severity: interaction.severity === 'severe' ? 'high' : 'medium',
+          affectedPatientCount: 1,
+          confidenceScore: interaction.confidence || 1,
+          dataPoints: {
+            drug1: interaction.drug1,
+            drug2: interaction.drug2,
+            prescriptionId,
+            patientId: prescription.patientId
+          },
+          recommendations: [
+            interaction.management || 'Consult healthcare provider immediately',
+            'Monitor patient closely for adverse effects',
+            'Consider alternative medications if possible'
+          ]
+        });
+      }
+
+      return {
+        interactions,
+        hasHighSeverity: highSeverityInteractions.length > 0
+      };
     } catch (error) {
-      console.error('Drug interaction detection error:', error);
-      return [];
+      console.error('Error detecting drug interactions:', error);
+      throw error;
     }
   }
 
@@ -197,115 +238,209 @@ class AnalyticsService {
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - timeWindow);
 
-      // Get aggregated data
-      const sideEffectModel = new SideEffect();
-      const allSideEffects = await sideEffectModel.findAll({ isAnonymous: true });
-      const sideEffects = allSideEffects.filter(se => {
-        if (!se.createdAt) return false;
-        
-        // Handle Firestore timestamp objects
-        let createdAt;
-        if (typeof se.createdAt === 'object' && se.createdAt.toDate) {
-          createdAt = se.createdAt.toDate();
-        } else if (typeof se.createdAt === 'object' && se.createdAt._seconds) {
-          createdAt = new Date(se.createdAt._seconds * 1000);
-        } else if (typeof se.createdAt === 'string') {
-          createdAt = new Date(se.createdAt);
-        } else {
-          createdAt = new Date(se.createdAt);
-        }
-        
-        return !isNaN(createdAt.getTime()) && createdAt >= cutoffDate;
+      // Get all drugs with recent activity
+      const activeDrugs = await Drug.findAll({
+        include: [{
+          model: SideEffect,
+          as: 'sideEffects',
+          where: {
+            createdAt: { [Op.gte]: cutoffDate }
+          },
+          required: true
+        }]
       });
 
-      // Group by drug
-      const drugStats = {};
-      const drugModel = new Drug();
-      
-      for (const se of sideEffects) {
-        const drug = await drugModel.findById(se.drugId);
-        const drugName = drug ? drug.name : 'Unknown Drug';
+      const report = {
+        timeWindow,
+        generatedAt: new Date(),
+        summary: {
+          totalDrugs: activeDrugs.length,
+          totalSideEffects: 0,
+          totalAlerts: 0,
+          spikeDetections: 0
+        },
+        drugAnalytics: [],
+        alerts: []
+      };
+
+      // Analyze each drug
+      for (const drug of activeDrugs) {
+        const spikeAnalysis = await this.detectSideEffectSpikes(drug.id, timeWindow);
         
-        if (!drugStats[drugName]) {
-          drugStats[drugName] = {
-            total: 0,
-            severe: 0,
-            moderate: 0,
-            mild: 0,
-            concerning: 0
-          };
+        const drugAnalytics = {
+          drugId: drug.id,
+          drugName: drug.name,
+          sideEffectCount: drug.sideEffects.length,
+          hasSpike: spikeAnalysis.isSpike,
+          spikeRatio: spikeAnalysis.metrics.spikeRatio,
+          severityDistribution: spikeAnalysis.metrics.severityDistribution || {}
+        };
+
+        report.drugAnalytics.push(drugAnalytics);
+        report.summary.totalSideEffects += drug.sideEffects.length;
+        
+        if (spikeAnalysis.isSpike) {
+          report.summary.spikeDetections++;
         }
-        drugStats[drugName].total++;
-        if (se.severity) drugStats[drugName][se.severity]++;
-        if (se.isConcerning) drugStats[drugName].concerning++;
       }
 
-      // Use LLM to generate insights
-      let insights = { patterns: [], alerts: [], summary: 'No significant patterns detected' };
-      
-      try {
-        insights = await LLMService.generateAnalyticsInsights({
-          drugStats,
-          timeWindow,
-          totalSideEffects: sideEffects.length
-        });
-      } catch (error) {
-        console.log('Analytics insights error, using fallback:', error.message);
-      }
+      // Get recent alerts
+      const recentAlerts = await AnalyticsAlert.findAll({
+        where: {
+          createdAt: { [Op.gte]: cutoffDate }
+        },
+        order: [['createdAt', 'DESC']]
+      });
 
-      return {
-        timeWindow: timeWindow || 30,
-        totalSideEffects: sideEffects.length || 0,
-        drugStats: drugStats || {},
-        insights: insights.patterns || [],
-        alerts: insights.alerts || [],
-        summary: insights.summary || 'No significant patterns detected',
-        generatedAt: new Date()
-      };
+      report.alerts = recentAlerts.map(alert => ({
+        id: alert.id,
+        type: alert.alertType,
+        title: alert.title,
+        severity: alert.severity,
+        confidence: alert.confidenceScore,
+        createdAt: alert.createdAt
+      }));
+
+      report.summary.totalAlerts = recentAlerts.length;
+
+      return report;
     } catch (error) {
-      console.error('Analytics report generation error:', error);
-      return {
-        error: 'Failed to generate analytics report',
-        generatedAt: new Date()
-      };
+      console.error('Error generating analytics report:', error);
+      throw error;
     }
   }
 
-  static async runPeriodicAnalysis() {
+  static async getAlerts(filters = {}) {
+    try {
+      const whereClause = {};
+      
+      if (filters.alertType) {
+        whereClause.alertType = filters.alertType;
+      }
+      
+      if (filters.severity) {
+        whereClause.severity = filters.severity;
+      }
+      
+      if (filters.isResolved !== undefined) {
+        whereClause.isResolved = filters.isResolved;
+      }
+
+      const alerts = await AnalyticsAlert.findAll({
+        where: whereClause,
+        order: [['createdAt', 'DESC']],
+        limit: filters.limit || 50
+      });
+
+      return alerts;
+    } catch (error) {
+      console.error('Error fetching alerts:', error);
+      throw error;
+    }
+  }
+
+  static async resolveAlert(alertId, resolution = {}) {
+    try {
+      const alert = await AnalyticsAlert.findByPk(alertId);
+      if (!alert) {
+        throw new Error('Alert not found');
+      }
+
+      await alert.update({
+        isResolved: true,
+        resolvedAt: new Date(),
+        resolution: resolution
+      });
+
+      return alert;
+    } catch (error) {
+      console.error('Error resolving alert:', error);
+      throw error;
+    }
+  }
+
+  static async runPeriodicAnalysis(timeWindow = 30) {
     try {
       console.log('Running periodic analytics analysis...');
       
       // Get all active drugs
-      const drugModel = new Drug();
-      const drugs = await drugModel.findAll({ isActive: true });
+      const activeDrugs = await Drug.findAll({
+        where: { isActive: true }
+      });
 
-      const alerts = [];
+      const analysisResults = {
+        timestamp: new Date(),
+        timeWindow,
+        drugsAnalyzed: activeDrugs.length,
+        spikesDetected: 0,
+        interactionsDetected: 0,
+        alertsGenerated: 0,
+        summary: {}
+      };
 
-      // Check for side effect spikes
-      for (const drug of drugs) {
-        const spikeAlert = await this.detectSideEffectSpikes(drug.id);
-        if (spikeAlert) {
-          alerts.push(spikeAlert);
+      // Analyze each drug for side effect spikes
+      for (const drug of activeDrugs) {
+        try {
+          const spikeAnalysis = await this.detectSideEffectSpikes(drug.id, timeWindow);
+          if (spikeAnalysis.isSpike) {
+            analysisResults.spikesDetected++;
+            analysisResults.alertsGenerated++;
+          }
+        } catch (error) {
+          console.error(`Error analyzing drug ${drug.name}:`, error);
         }
       }
 
+      // Get recent prescriptions and check for interactions
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - timeWindow);
+      
+      const recentPrescriptions = await Prescription.findAll({
+        where: {
+          createdAt: { [Op.gte]: cutoffDate },
+          isActive: true
+        },
+        include: [{
+          model: Drug,
+          as: 'drug'
+        }]
+      });
+
       // Check for drug interactions
-      const interactionAlerts = await this.detectDrugInteractions();
-      alerts.push(...interactionAlerts);
+      for (const prescription of recentPrescriptions) {
+        try {
+          const interactionAnalysis = await this.detectDrugInteractions(prescription.id);
+          if (interactionAnalysis.hasHighSeverity) {
+            analysisResults.interactionsDetected++;
+            analysisResults.alertsGenerated++;
+          }
+        } catch (error) {
+          console.error(`Error analyzing interactions for prescription ${prescription.id}:`, error);
+        }
+      }
 
-      // Generate overall analytics report
-      const report = await this.generateAnalyticsReport();
-
-      console.log(`Analytics analysis complete. Generated ${alerts.length} alerts.`);
-
-      return {
-        alerts,
-        report,
-        timestamp: new Date()
+      // Generate summary
+      analysisResults.summary = {
+        totalAlerts: await AnalyticsAlert.count({ where: { isResolved: false } }),
+        highSeverityAlerts: await AnalyticsAlert.count({ 
+          where: { 
+            isResolved: false, 
+            severity: 'high' 
+          } 
+        }),
+        recentSideEffects: await SideEffect.count({
+          where: {
+            createdAt: { [Op.gte]: cutoffDate },
+            isAnonymous: true
+          }
+        })
       };
+
+      console.log('Periodic analysis completed:', analysisResults);
+      return analysisResults;
     } catch (error) {
-      console.error('Periodic analysis error:', error);
-      return { error: error.message };
+      console.error('Error running periodic analysis:', error);
+      throw error;
     }
   }
 }
