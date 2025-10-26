@@ -87,7 +87,7 @@ const Layout = ({ children }) => {
     <Box>
       <Box sx={{ p: 2, textAlign: 'center' }}>
         <Typography variant="h6" color="primary" fontWeight="bold">
-          DrugTracker
+          Dr. House
         </Typography>
         <Typography variant="body2" color="text.secondary">
           {user?.role === 'doctor' ? 'Doctor Portal' : 'Patient Portal'}
