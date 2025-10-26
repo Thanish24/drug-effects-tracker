@@ -1,60 +1,57 @@
 const OpenAI = require('openai');
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Use Groq for all LLM functionality
+const groq = process.env.GROQ_API_KEY && 
+             process.env.GROQ_API_KEY !== 'your_groq_api_key_here' && 
+             process.env.GROQ_API_KEY !== 'skip_llm_features' 
+  ? new OpenAI({ 
+      apiKey: process.env.GROQ_API_KEY,
+      baseURL: "https://api.groq.com/openai/v1"
+    })
+  : null;
 
 class LLMService {
   static async analyzeSideEffect(sideEffectData) {
     try {
+      // Skip LLM analysis if Groq is not configured
+      if (!groq) {
+        return {
+          concernLevel: 'moderate',
+          isConcerning: sideEffectData.severity === 'severe' || sideEffectData.severity === 'critical',
+          recommendations: ['Consult your healthcare provider'],
+          suggestedActions: ['Monitor symptoms'],
+          potentialCauses: ['Drug side effect'],
+          interactionWarnings: [],
+          urgency: sideEffectData.severity === 'severe' ? 'urgent' : 'routine',
+          reasoning: 'Basic analysis without LLM'
+        };
+      }
+      
       const { description, severity, impactOnDailyLife, drugName, patientAge, otherMedications } = sideEffectData;
 
-      const prompt = `
-You are a medical AI assistant analyzing patient-reported side effects. Please analyze the following side effect report and provide your assessment.
+      const prompt = `Analyze this side effect and respond with ONLY valid JSON (no markdown, no explanations):
 
-Side Effect Details:
-- Description: ${description}
-- Severity: ${severity}
-- Impact on Daily Life: ${impactOnDailyLife}
-- Drug: ${drugName}
-- Patient Age: ${patientAge || 'Not specified'}
-- Other Medications: ${otherMedications ? otherMedications.join(', ') : 'None reported'}
+Side Effect: ${description}
+Severity: ${severity}
+Impact: ${impactOnDailyLife}
+Drug: ${drugName}
+Age: ${patientAge || 'Not specified'}
+Other Meds: ${otherMedications ? otherMedications.join(', ') : 'None'}
 
-Please provide your analysis in the following JSON format:
+Respond with this exact JSON format:
 {
-  "concernLevel": "low|moderate|high|critical",
-  "isConcerning": boolean,
-  "recommendations": [
-    "specific recommendation 1",
-    "specific recommendation 2"
-  ],
-  "suggestedActions": [
-    "immediate action if needed",
-    "follow-up action"
-  ],
-  "potentialCauses": [
-    "possible cause 1",
-    "possible cause 2"
-  ],
-  "interactionWarnings": [
-    "warning about drug interactions if any"
-  ],
-  "urgency": "routine|urgent|emergency",
-  "reasoning": "brief explanation of your assessment reasoning"
-}
+  "concernLevel": "low",
+  "isConcerning": false,
+  "recommendations": ["consult doctor"],
+  "suggestedActions": ["monitor symptoms"],
+  "potentialCauses": ["drug side effect"],
+  "interactionWarnings": [],
+  "urgency": "routine",
+  "reasoning": "analysis summary"
+}`;
 
-Focus on:
-1. Identifying potentially serious side effects
-2. Detecting possible drug interactions
-3. Assessing if immediate medical attention is needed
-4. Providing actionable recommendations
-5. Flagging any red flags that require urgent attention
-
-Be thorough but concise in your analysis.
-`;
-
-      const response = await openai.chat.completions.create({
-        model: "gpt-4",
+      const response = await groq.chat.completions.create({
+        model: "llama-3.1-8b-instant",
         messages: [
           {
             role: "system",
@@ -69,11 +66,48 @@ Be thorough but concise in your analysis.
         max_tokens: 1000
       });
 
-      const analysis = JSON.parse(response.choices[0].message.content);
+      let analysis;
+      try {
+        // Clean the response to extract JSON
+        let content = response.choices[0].message.content.trim();
+        
+        // Remove markdown code blocks if present
+        if (content.includes('```json')) {
+          content = content.split('```json')[1].split('```')[0];
+        } else if (content.includes('```')) {
+          content = content.split('```')[1].split('```')[0];
+        }
+        
+        // Remove any markdown formatting
+        content = content.replace(/\*\*/g, '').replace(/\*/g, '');
+        
+        analysis = JSON.parse(content);
+      } catch (parseError) {
+        console.log('JSON parse error, using fallback analysis');
+        analysis = {
+          concernLevel: 'moderate',
+          isConcerning: severity === 'severe' || severity === 'critical',
+          recommendations: ['Consult your healthcare provider'],
+          suggestedActions: ['Monitor symptoms'],
+          potentialCauses: ['Drug side effect'],
+          interactionWarnings: [],
+          urgency: severity === 'severe' ? 'urgent' : 'routine',
+          reasoning: 'AI analysis failed, using basic assessment'
+        };
+      }
       
       // Validate the response structure
-      if (!analysis.concernLevel || !analysis.isConcerning !== undefined) {
-        throw new Error('Invalid LLM response structure');
+      if (!analysis.concernLevel || analysis.isConcerning === undefined) {
+        analysis = {
+          concernLevel: 'moderate',
+          isConcerning: severity === 'severe' || severity === 'critical',
+          recommendations: ['Consult your healthcare provider'],
+          suggestedActions: ['Monitor symptoms'],
+          potentialCauses: ['Drug side effect'],
+          interactionWarnings: [],
+          urgency: severity === 'severe' ? 'urgent' : 'routine',
+          reasoning: 'Invalid AI response, using basic assessment'
+        };
       }
 
       return analysis;
@@ -104,38 +138,36 @@ Be thorough but concise in your analysis.
 
   static async detectDrugInteractions(drugs, sideEffects) {
     try {
-      const prompt = `
-Analyze the following drug combinations and reported side effects to detect potential interactions:
+      // Skip LLM analysis if Groq is not configured
+      if (!groq) {
+        return {
+          hasInteractions: false,
+          interactionLevel: 'none',
+          description: 'Basic analysis: No LLM available for interaction detection',
+          recommendations: ['Consult healthcare provider for drug interaction assessment'],
+          confidence: 0.0
+        };
+      }
+      
+      const prompt = `Analyze drug interactions and respond with ONLY valid JSON:
 
 Drugs: ${drugs.join(', ')}
-Reported Side Effects: ${sideEffects.map(se => `${se.description} (${se.severity})`).join('; ')}
+Side Effects: ${sideEffects.map(se => `${se.description} (${se.severity})`).join('; ')}
 
-Please analyze for:
-1. Known drug-drug interactions
-2. Unusual side effect patterns
-3. Potential synergistic effects
-4. Unexpected reactions
-
-Provide your analysis in JSON format:
+Respond with this exact JSON format:
 {
-  "hasInteractions": boolean,
-  "interactionType": "pharmacokinetic|pharmacodynamic|synergistic|antagonistic|unknown",
-  "severity": "minor|moderate|major|severe",
-  "description": "detailed description of the interaction",
-  "clinicalSignificance": "low|moderate|high",
-  "recommendations": [
-    "specific recommendation 1",
-    "specific recommendation 2"
-  ],
-  "monitoringRequired": [
-    "what to monitor"
-  ],
-  "confidence": 0.0-1.0
-}
-`;
+  "hasInteractions": false,
+  "interactionType": "none",
+  "severity": "minor",
+  "description": "no interactions detected",
+  "clinicalSignificance": "low",
+  "recommendations": ["monitor symptoms"],
+  "monitoringRequired": ["watch for changes"],
+  "confidence": 0.5
+}`;
 
-      const response = await openai.chat.completions.create({
-        model: "gpt-4",
+      const response = await groq.chat.completions.create({
+        model: "llama-3.1-8b-instant",
         messages: [
           {
             role: "system",
@@ -150,7 +182,37 @@ Provide your analysis in JSON format:
         max_tokens: 800
       });
 
-      return JSON.parse(response.choices[0].message.content);
+      let analysis;
+      try {
+        // Clean the response to extract JSON
+        let content = response.choices[0].message.content.trim();
+        
+        // Remove markdown code blocks if present
+        if (content.includes('```json')) {
+          content = content.split('```json')[1].split('```')[0];
+        } else if (content.includes('```')) {
+          content = content.split('```')[1].split('```')[0];
+        }
+        
+        // Remove any markdown formatting
+        content = content.replace(/\*\*/g, '').replace(/\*/g, '');
+        
+        analysis = JSON.parse(content);
+      } catch (parseError) {
+        console.log('Drug interaction JSON parse error, using fallback');
+        analysis = {
+          hasInteractions: false,
+          interactionType: "unknown",
+          severity: "minor",
+          description: "Unable to parse AI response",
+          clinicalSignificance: "low",
+          recommendations: ["Consult healthcare provider"],
+          monitoringRequired: ["Monitor for unusual symptoms"],
+          confidence: 0.0
+        };
+      }
+      
+      return analysis;
     } catch (error) {
       console.error('Drug interaction analysis error:', error);
       return {
@@ -168,36 +230,28 @@ Provide your analysis in JSON format:
 
   static async generateAnalyticsInsights(data) {
     try {
-      const prompt = `
-Analyze the following aggregated drug side effect data to identify patterns and insights:
+      // Skip LLM analysis if Groq is not configured
+      if (!groq) {
+        return [
+          'Analytics insights require OpenAI API key configuration',
+          'Basic analysis: Monitor side effect patterns and trends',
+          'Consider consulting healthcare professionals for complex cases'
+        ];
+      }
+      
+      const prompt = `Analyze drug data and respond with ONLY valid JSON:
 
-${JSON.stringify(data, null, 2)}
+Data: ${JSON.stringify(data, null, 2)}
 
-Please provide insights in JSON format:
+Respond with this exact JSON format:
 {
-  "patterns": [
-    {
-      "type": "side_effect_spike|drug_interaction|unexpected_reaction|dosage_concern",
-      "description": "description of the pattern",
-      "severity": "low|medium|high|critical",
-      "affectedDrugs": ["drug1", "drug2"],
-      "confidence": 0.0-1.0,
-      "recommendations": ["recommendation1", "recommendation2"]
-    }
-  ],
-  "alerts": [
-    {
-      "type": "alert_type",
-      "message": "alert message",
-      "priority": "low|medium|high|critical"
-    }
-  ],
-  "summary": "overall summary of findings"
-}
-`;
+  "patterns": [],
+  "alerts": [],
+  "summary": "no significant patterns detected"
+}`;
 
-      const response = await openai.chat.completions.create({
-        model: "gpt-4",
+      const response = await groq.chat.completions.create({
+        model: "llama-3.1-8b-instant",
         messages: [
           {
             role: "system",
@@ -212,7 +266,32 @@ Please provide insights in JSON format:
         max_tokens: 1500
       });
 
-      return JSON.parse(response.choices[0].message.content);
+      let analysis;
+      try {
+        // Clean the response to extract JSON
+        let content = response.choices[0].message.content.trim();
+        
+        // Remove markdown code blocks if present
+        if (content.includes('```json')) {
+          content = content.split('```json')[1].split('```')[0];
+        } else if (content.includes('```')) {
+          content = content.split('```')[1].split('```')[0];
+        }
+        
+        // Remove any markdown formatting
+        content = content.replace(/\*\*/g, '').replace(/\*/g, '');
+        
+        analysis = JSON.parse(content);
+      } catch (parseError) {
+        console.log('Analytics insights JSON parse error, using fallback');
+        analysis = {
+          patterns: [],
+          alerts: [],
+          summary: "Unable to parse AI response"
+        };
+      }
+      
+      return analysis;
     } catch (error) {
       console.error('Analytics insights error:', error);
       return {

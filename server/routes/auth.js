@@ -21,7 +21,8 @@ router.post('/register', async (req, res) => {
     }
 
     // Check if user already exists
-    const existingUser = await User.findOne({ where: { email } });
+    const registerUserModel = new User();
+    const existingUser = await registerUserModel.findByEmail(email);
     if (existingUser) {
       return res.status(409).json({ error: 'User already exists' });
     }
@@ -48,7 +49,7 @@ router.post('/register', async (req, res) => {
       userData.specialization = specialization;
     }
 
-    const user = await User.create(userData);
+    const user = await registerUserModel.create(userData);
 
     // Generate JWT token
     const token = jwt.sign(
@@ -88,7 +89,8 @@ router.post('/login', async (req, res) => {
     }
 
     // Find user by email
-    const user = await new User().findByEmail(email);
+    const loginUserModel = new User();
+    const user = await loginUserModel.findByEmail(email);
     if (!user) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
@@ -99,15 +101,13 @@ router.post('/login', async (req, res) => {
     }
 
     // Validate password
-    const userModel = new User();
-    const isValidPassword = await userModel.validatePassword(user, password);
+    const isValidPassword = await loginUserModel.validatePassword(user, password);
     if (!isValidPassword) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
     // Update last login
-    const userModel = new User();
-    await userModel.update(user.id, { lastLogin: new Date() });
+    await loginUserModel.update(user.id, { lastLogin: new Date() });
 
     // Generate JWT token
     const token = jwt.sign(
@@ -140,7 +140,8 @@ router.post('/login', async (req, res) => {
 // Get current user profile
 router.get('/profile', authenticateToken, async (req, res) => {
   try {
-    const user = await User.findByPk(req.user.id);
+    const profileUserModel = new User();
+    const user = await profileUserModel.findById(req.user.id);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -171,7 +172,8 @@ router.put('/profile', authenticateToken, async (req, res) => {
   try {
     const { firstName, lastName, phone, address, specialization } = req.body;
     
-    const user = await User.findByPk(req.user.id);
+    const updateUserModel = new User();
+    const user = await updateUserModel.findById(req.user.id);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -183,7 +185,7 @@ router.put('/profile', authenticateToken, async (req, res) => {
     if (address) updateData.address = address;
     if (user.role === 'doctor' && specialization) updateData.specialization = specialization;
 
-    await user.update(updateData);
+    await updateUserModel.update(user.id, updateData);
 
     res.json({
       message: 'Profile updated successfully',
@@ -217,19 +219,20 @@ router.put('/change-password', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'New password must be at least 6 characters' });
     }
 
-    const user = await User.scope('withPassword').findByPk(req.user.id);
+    const passwordUserModel = new User();
+    const user = await passwordUserModel.findById(req.user.id);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
     // Verify current password
-    const isValidPassword = await user.validatePassword(currentPassword);
+    const isValidPassword = await passwordUserModel.validatePassword(user, currentPassword);
     if (!isValidPassword) {
       return res.status(401).json({ error: 'Current password is incorrect' });
     }
 
     // Update password
-    await user.update({ password: newPassword });
+    await passwordUserModel.updatePassword(user.id, newPassword);
 
     res.json({ message: 'Password updated successfully' });
   } catch (error) {

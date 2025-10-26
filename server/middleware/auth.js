@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const { User } = require('../models');
+const { User } = require('../models/firebaseModels');
 
 const authenticateToken = async (req, res, next) => {
   const authHeader = req.headers['authorization'];
@@ -13,7 +13,8 @@ const authenticateToken = async (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     
     // Fetch user to ensure they still exist and are active
-    const user = await User.findByPk(decoded.userId);
+    const userModel = new User();
+    const user = await userModel.findById(decoded.userId);
     if (!user || !user.isActive) {
       return res.status(401).json({ error: 'Invalid or inactive user' });
     }
